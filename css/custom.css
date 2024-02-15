@@ -3,7 +3,14 @@
     height: auto; }
 .navbar {
     display: none; }
-
+.container {
+  max-width: 800px
+}
+.box {
+  border-radius: 8px;
+  border: 2px solid #000000;
+  padding: 10px;
+}
 
 /* Navbar */
 .navbar + .docs-section {
@@ -32,7 +39,7 @@ margin-bottom: 0; }
 text-transform: uppercase;
 font-size: 12px;
 font-weight: 600;
-letter-spacing: .15rem;
+letter-spacing: .10rem;
 margin-right: 30px;
 text-decoration: none;
 line-height: 6.5rem;
