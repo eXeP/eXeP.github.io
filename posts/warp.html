@@ -20,9 +20,9 @@
 
   <!-- CSS
   –––––––––––––––––––––––––––––––––––––––––––––––––– -->
-  <link rel="stylesheet" href="/css/normalize.css">
-  <link rel="stylesheet" href="/css/skeleton.css">
-  <link rel="stylesheet" href="/css/custom.css">
+  <link rel="stylesheet" href="../css/normalize.css">
+  <link rel="stylesheet" href="../css/skeleton.css">
+  <link rel="stylesheet" href="../css/custom.css">
 
   <!-- Favicon
   –––––––––––––––––––––––––––––––––––––––––––––––––– -->
@@ -43,15 +43,180 @@
         </ul>
       </div>
     </nav>
-    <div class="row" style="padding: 2rem 0" >
-      <h5><span style='font-weight: bold;'>Future (and present) of differentiable programming: NVIDIA-Warp</span></h5>
-      <h7>NVIDIA-Warp has transformed the way I write custom operations for all of my deep learning projects and I want you to use it too.</h7>
+    <div class="row" style="padding: 2rem 0; margin-bottom:2rem; border-bottom: 1px solid #eee;" >
+      <h5 style="margin:0"><span style='font-weight: bold;'>Future (and present) of differentiable programming: NVIDIA-Warp</span></h5>
+      <p style="margin:0"><h7>15.2.2024.</h7></p>
+      <h7>Basically me fangirling over NVIDIA-Warp. You should try it too. Includes a Pytorch-Warp interop tutorial.</h7>
     </div>
     <div class="row">
-        <div class="twelve columns">
-            
+      <div class="twelve columns">
+
+        <p>While working on a <a href="https://proceedings.bmvc2023.org/501/">problem with sparse data</a> recently, I had a case where some data  was not fully initialized. In order to pass it to a neural network, I decided I wanted to initialize the missing data to the spatially closest valid data:</p>
+        <div class="row2" style="padding-bottom: 2rem;">
+          <div class="column2">
+            <div class="grid-container">
+              <div class="grid-item">2</div>
+              <div class="grid-item">NaN</div>
+              <div class="grid-item">NaN</div>  
+              <div class="grid-item">4</div>
+              <div class="grid-item">NaN</div>
+              <div class="grid-item">3</div>  
+              <div class="grid-item">NaN</div>
+              <div class="grid-item">7</div>
+              <div class="grid-item">NaN</div>  
+              <div class="grid-item">NaN</div>
+              <div class="grid-item">1</div>  
+              <div class="grid-item">NaN</div>
+              <div class="grid-item">NaN</div>  
+              <div class="grid-item">NaN</div>
+              <div class="grid-item">1</div>  
+              <div class="grid-item">NaN</div>
+            </div>
+          </div>
+          <div class="column2">
+            <div class="arrow-box">
+              &rarr;
+            </div>
+          </div>
+          <div class="column2">
+            <div class="grid-container">
+              <div class="grid-item">2</div>
+              <div class="grid-item">3</div>
+              <div class="grid-item">4</div>  
+              <div class="grid-item">4</div>
+              <div class="grid-item">2</div>
+              <div class="grid-item">3</div>  
+              <div class="grid-item">1</div>
+              <div class="grid-item">7</div>
+              <div class="grid-item">3</div>  
+              <div class="grid-item">3</div>
+              <div class="grid-item">1</div>  
+              <div class="grid-item">7</div>
+              <div class="grid-item">1</div>  
+              <div class="grid-item">1</div>
+              <div class="grid-item">1</div>  
+              <div class="grid-item">1</div>
+            </div>
+          </div>
         </div>
+        <p>I also decided that this infilling-process should be fast and differentiable too, but I was not concerned about ties. Below I have a visualization of the ties (same number) when we consider infilling the center pixel of a 5-by-5 grid. Notice how the corner pixels (marked with 5), would be numbered with a 6, if the grid was larger, as the out-of-bounds pixels over the number 3s would be closer to the center.</p> 
+        <div class="grid-container5" style="padding-bottom: 2rem;">
+          <div class="grid-item" style="background-color:#555">5</div>  
+          <div class="grid-item" style="background-color:#666">4</div>
+          <div class="grid-item" style="background-color:#888">3</div>  
+          <div class="grid-item" style="background-color:#666">4</div>
+          <div class="grid-item" style="background-color:#555">5</div>  
+
+          <div class="grid-item" style="background-color:#666">4</div>  
+          <div class="grid-item" style="background-color:#aaa">2</div>
+          <div class="grid-item" style="background-color:#ccc">1</div>  
+          <div class="grid-item" style="background-color:#aaa">2</div>
+          <div class="grid-item" style="background-color:#666">4</div>  
+
+          <div class="grid-item" style="background-color:#888">3</div>  
+          <div class="grid-item" style="background-color:#ccc">1</div>
+          <div class="grid-item" style="background-color:#eee">0</div>  
+          <div class="grid-item" style="background-color:#ccc">1</div>
+          <div class="grid-item" style="background-color:#888">3</div>  
+
+          <div class="grid-item" style="background-color:#666">4</div>  
+          <div class="grid-item" style="background-color:#aaa">2</div>
+          <div class="grid-item" style="background-color:#ccc">1</div>  
+          <div class="grid-item" style="background-color:#aaa">2</div>
+          <div class="grid-item" style="background-color:#666">4</div>  
+
+          <div class="grid-item" style="background-color:#555">5</div>  
+          <div class="grid-item" style="background-color:#666">4</div>
+          <div class="grid-item" style="background-color:#888">3</div>  
+          <div class="grid-item" style="background-color:#666">4</div>
+          <div class="grid-item" style="background-color:#555">5</div>  
+        </div>
+        <p>However, I really couldn't figure out how to do this in PyTorch, short of writing the forward and backward passes in CUDA. Lucky for me, the problem is rather easy with Warp:</p>
+        <pre><code>import warp as wp
+import numpy as np
+
+wp.init()
+
+@wp.func
+def check_bounds(i: wp.int32, j: wp.int32, n: wp.int32, m: wp.int32):
+    return i >= 0 and j >= 0 and i < n and j < m
+
+@wp.kernel
+def length(
+    feat: wp.array2d(dtype=wp.float32),
+    mask: wp.array2d(dtype=wp.uint8),
+    output: wp.array2d(dtype=wp.float32)
+):
+    i, j = wp.tid()
+    # The feature is already valid, no need to infill
+    if mask[i, j] == 0:
+        output[i, j] = feat[i, j]
+        return
+    
+    max_len = wp.max(feat.shape[0], feat.shape[1])
+    n = feat.shape[0]
+    m = feat.shape[1]
+    for l in range(1, max_len+1):
+        if check_bounds(i+l, j, n, m) and mask[i+l, j] == 0:
+            output[i, j] = feat[i+l, j]
+            return
+        if check_bounds(i-l, j, n, m) and mask[i-l, j] == 0:
+            output[i, j] = feat[i-l, j]
+            return
+        if check_bounds(i, j+l, n, m) and mask[i, j+l] == 0:
+            output[i, j] = feat[i, j+l]
+            return
+        if check_bounds(i, j-l, n, m) and mask[i, j-l] == 0:
+            output[i, j] = feat[i, j-l]
+            return
+        for o in range (1, l+1):
+            if check_bounds(i+l, j+o, n, m) and mask[i+l, j+o] == 0:
+                output[i, j] = feat[i+l, j+o]
+                return
+            if check_bounds(i+l, j-o, n, m) and mask[i+l, j-o] == 0:
+                output[i, j] = feat[i+l, j-o]
+                return
+            if check_bounds(i-l, j+o, n, m) and mask[i-l, j+o] == 0:
+                output[i, j] = feat[i-l, j+o]
+                return
+            if check_bounds(i-l, j-o, n, m) and mask[i-l, j-o] == 0:
+                output[i, j] = feat[i-l, j-o]
+                return
+            if check_bounds(i+o, j+l, n, m) and mask[i+o, j+l] == 0:
+                output[i, j] = feat[i+o, j+l]
+                return
+            if check_bounds(i-o, j+l, n, m) and mask[i-o, j+l] == 0:
+                output[i, j] = feat[i-o, j+l]
+                return
+            if check_bounds(i+o, j-l, n, m) and mask[i+o, j-l] == 0:
+                output[i, j] = feat[i+o, j-l]
+                return
+            if check_bounds(i-o, j-l, n, m) and mask[i-o, j-l] == 0:
+                output[i, j] = feat[i-o, j-l]
+                return
+    
+f = np.array([[2, 0, 0, 4], [0, 3, 0, 7], [0, 0, 1, 0], [0, 0, 1, 0]])
+m = (f == 0).astype(np.uint8)
+dim = f.shape
+
+# allocate arrays for warp
+feat = wp.array2d(f, dtype=wp.float32)
+mask = wp.array2d(m, dtype=wp.uint8)
+output = wp.zeros(dim, dtype=wp.float32)
+
+print("Running kernel with dim {}".format(dim))
+# launch kernel
+wp.launch(
+    kernel=length,
+    dim=dim,
+    inputs=[feat, mask],
+    outputs=[output]
+)
+print(feat)
+print(output)
+        </code></pre>
       </div>
+    </div>
   </div>
 
 <!-- End Document
