@@ -45,12 +45,12 @@
     </nav>
     <div class="row" style="padding: 2rem 0; margin-bottom:2rem; border-bottom: 1px solid #eee;" >
       <h5 style="margin:0"><span style='font-weight: bold;'>Filling in missing data with NVIDIA-Warp</span></h5>
-      <p style="margin:0"><h7>15.2.2024.</h7></p>
+      <p style="margin:0"><h7>15.2.2024</h7></p>
       <h7>Basically me fangirling over NVIDIA-Warp. You should try it too.</h7>
     </div>
     <div class="row">
       <div class="twelve columns">
-
+        <p>TL;DR: <a href="https://github.com/NVIDIA/warp">NVIDIA-Warp</a> (<code>pip install warp-lang</code>) is a high-performance framework for writing differentiable parallel code. Think of cuda, but without the pain! Checkout out the <a href="https://github.com/NVIDIA/warp/tree/main/examples">examples</a> and <a href="https://nvidia.github.io/warp/">documentation</a> to learn more.</p>
         <p>While working on a <a href="https://proceedings.bmvc2023.org/501/">problem with sparse data</a> recently, I had a case where some of the data was not initialized. In order to pass it to a neural network, I decided I wanted to initialize the missing data to the spatially closest valid data:</p>
         <div class="row2" style="padding-bottom: 2rem;">
           <div class="column2">
@@ -142,7 +142,7 @@ def check_bounds(i: wp.int32, j: wp.int32, n: wp.int32, m: wp.int32):
     return i >= 0 and j >= 0 and i < n and j < m
 
 @wp.kernel
-def length(
+def _fill_in_kernel(
     feat: wp.array2d(dtype=wp.float32),
     mask: wp.array2d(dtype=wp.uint8),
     output: wp.array2d(dtype=wp.float32)
@@ -196,6 +196,8 @@ def length(
                 return
     
 f = np.array([[2, 0, 0, 4], [0, 3, 0, 7], [0, 0, 1, 0], [0, 0, 1, 0]])
+# zeros as missing values marked here
+# we could just do without this mask, but I wanted to support a mask so here we are
 m = (f == 0).astype(np.uint8)
 dim = f.shape
 
@@ -207,7 +209,7 @@ output = wp.zeros(dim, dtype=wp.float32)
 print("Running kernel with dim {}".format(dim))
 # launch kernel
 wp.launch(
-    kernel=length,
+    kernel=_fill_in_kernel,
     dim=dim,
     inputs=[feat, mask],
     outputs=[output]
