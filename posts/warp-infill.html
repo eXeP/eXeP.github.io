@@ -46,7 +46,7 @@
     <div class="row" style="padding: 2rem 0; margin-bottom:2rem; border-bottom: 1px solid #eee;" >
       <h5 style="margin:0"><span style='font-weight: bold;'>Filling in missing data with NVIDIA-Warp</span></h5>
       <p style="margin:0"><h7>15.2.2024</h7></p>
-      <h7>Basically me fangirling over NVIDIA-Warp. You should try it too.</h7>
+      <h7>Basically me fangirling over NVIDIA-Warp. You should try it too. Includes Warp-PyTorch interop example.</h7>
     </div>
     <div class="row">
       <div class="twelve columns">
@@ -218,6 +218,51 @@ print(feat)
 print(output)
         </code></pre>
         <p>Actually, in hindsight, this was probably not the best example. But hey, at least it was easier than cuda! Also, in my case the problem itself existed only because I had not yet figured out bilinear splatting.</p>
+        <p>Now, to make the warp-kernel differentiable and interoperable with PyTorch, we need to wrap it in a <code>torch.autograd.Function</code>.</p>
+        <pre><code>import torch
+class NearestFill(torch.autograd.Function):
+    @staticmethod
+    def forward(ctx, f, mask):
+        height, width = f.shape
+        device = wp.device_from_torch(f.device)
+
+        wp_output = wp.zeros(shape=f.shape)
+        tape = wp.Tape() # this object keeps track of gradients in warp
+        ctx.tape = tape
+        ctx.wp_output = wp_output
+        ctx.wp_f = wp.from_torch(f)
+        ctx.wp_mask = wp.from_torch(mask)
+
+        wp.synchronize_device(device)
+        with tape:
+            wp.launch(
+                kernel=_fill_in_kernel,
+                dim=(height, width),
+                inputs=[ctx.wp_f, ctx.wp_mask],
+                outputs=[wp_output],
+                device=device
+            )
+        wp.synchronize_device(device)
+        
+        return wp.to_torch(wp_output)
+
+    @staticmethod
+    def backward(ctx, adj_output):
+        ctx.tape.backward(grads={ctx.wp_output: wp.from_torch(adj_output.contiguous())})
+        grad_f = None
+        if ctx.wp_f in ctx.tape.gradients:
+            grad_f = wp.to_torch(ctx.tape.gradients[ctx.wp_f])
+        # return should match the parameters to forward
+        # we don't need gradient for mask here
+        return (grad_f, None)
+
+f_torch = torch.tensor(f, dtype=torch.float32, requires_grad=True).cuda()
+m_torch = torch.tensor(m).cuda()
+filled_torch = NearestFill.apply(f_torch, m_torch)
+print(f_torch)
+print(m_torch)
+print(filled_torch)</code></pre>
+          <p>Much easier than writing cuda and compiling the PyTorch extensions! Now, I do admit that this particular problem wasn't the best example, but where this more traditional parallel programming really shines is interpolation or anything related to graphics. For example, bicubic interpolation is much easier to implement in Warp than in pure PyTorch.</p>
       </div>
     </div>
   </div>
