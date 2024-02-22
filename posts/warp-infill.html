@@ -217,6 +217,15 @@ wp.launch(
 print(feat)
 print(output)
         </code></pre>
+        <pre><code>Output:
+[[2. 0. 0. 4.]
+[0. 3. 0. 7.]
+[0. 0. 1. 0.]
+[0. 0. 1. 0.]]
+[[2. 3. 4. 4.]
+[2. 3. 1. 7.]
+[3. 3. 1. 7.]
+1. 1. 1. 1.]]</code></pre>
         <p>Actually, in hindsight, this was probably not the best example. But hey, at least it was easier than cuda! Also, in my case the problem itself existed only because I had not yet figured out bilinear splatting.</p>
         <p>Now, to make the warp-kernel differentiable and interoperable with PyTorch, we need to wrap it in a <code>torch.autograd.Function</code>.</p>
         <pre><code>import torch
@@ -262,6 +271,19 @@ filled_torch = NearestFill.apply(f_torch, m_torch)
 print(f_torch)
 print(m_torch)
 print(filled_torch)</code></pre>
+<pre><code>Output:
+tensor([[2., 0., 0., 4.],
+  [0., 3., 0., 7.],
+  [0., 0., 1., 0.],
+  [0., 0., 1., 0.]], device='cuda:0', grad_fn=<ToCopyBackward0>)
+tensor([[0, 1, 1, 0],
+  [1, 0, 1, 0],
+  [1, 1, 0, 1],
+  [1, 1, 0, 1]], device='cuda:0', dtype=torch.uint8)
+tensor([[2., 3., 4., 4.],
+  [2., 3., 1., 7.],
+  [3., 3., 1., 7.],
+  [1., 1., 1., 1.]], device='cuda:0', grad_fn=<NearestFillBackward>)</code></pre>
           <p>Much easier than writing cuda and compiling the PyTorch extensions! Now, I do admit that this particular problem wasn't the best example, but where this more traditional parallel programming really shines is interpolation or anything related to graphics. For example, bicubic interpolation is much easier to implement in Warp than in pure PyTorch.</p>
       </div>
     </div>
