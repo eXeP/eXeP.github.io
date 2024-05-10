@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+
+  <!-- Basic Page Needs
+  –––––––––––––––––––––––––––––––––––––––––––––––––– -->
+  <meta charset="utf-8">
+  <title>Pietari Kaskela</title>
+  <meta name="description" content="A post about nvidia-warp and PyTorch.">
+  <meta name="keywords" content="NVIDIA, Warp, NVIDIA-Warp, Pytorch, Differentiable">
+  <meta name="author" content="Pietari Kaskela">
+
+  <!-- Mobile Specific Metas
+  –––––––––––––––––––––––––––––––––––––––––––––––––– -->
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+
+  <!-- FONT
+  –––––––––––––––––––––––––––––––––––––––––––––––––– -->
+  <link href="//fonts.googleapis.com/css?family=Raleway:400,300,600" rel="stylesheet" type="text/css">
+
+  <!-- CSS
+  –––––––––––––––––––––––––––––––––––––––––––––––––– -->
+  <link rel="stylesheet" href="../css/normalize.css">
+  <link rel="stylesheet" href="../css/skeleton.css">
+  <link rel="stylesheet" href="../css/custom.css">
+
+  <!-- Favicon
+  –––––––––––––––––––––––––––––––––––––––––––––––––– -->
+  <link rel="icon" type="image/png" href="/images/favicon.png">
+
+</head>
+<body>
+
+  <!-- Primary Page Layout
+  –––––––––––––––––––––––––––––––––––––––––––––––––– -->
+  <div class="container" style="margin-bottom: 15%;">
+    <nav class="navbar" style="margin-top: 25%;">
+      <div>
+        <ul class="navbar-list">
+          <li class="navbar-item"><a class="navbar-link" href="/">About me</a></li>
+          <li class="navbar-item"><a class="navbar-link" href="/blog.html">Blog</a></li>
+          <li class="navbar-item"><a class="navbar-link" href="/keyboards.html">Keyboards</a></li>
+        </ul>
+      </div>
+    </nav>
+    <div class="row" style="padding: var(--space-m) 0; margin-bottom: var(--space-m); border-bottom: 1px solid #eee;" >
+      <h5 style="margin:0"><span style='font-weight: bold;'>CUDA swizzle: avoiding shared memory bank conflicts</span></h5>
+      <p style="margin:0"><h7>18.5.2024</h7></p>
+      <h7>A simple tutorial on avoiding shared memory bank conflicts using swizzling in CUDA.</h7>
+    </div>
+    <div class="row">
+      <div class="twelve columns">
+        <b><p>TL;DR: <a href="https://developer.nvidia.com/blog/efficient-matrix-transpose-cuda-cc/">A legendary technical blog post</a> on how to write an efficient CUDA kernel for matrix transpose contains an easy, but somewhat awkward way to avoid shared memory bank conflicts. There is an (in my opinion) better way, but it's not well documented. I'm here to sing the praises of swizzling.</p></b>
+
+        <p>I was inspired to write this post after endulging in one of my favorite pastimes: procrastinating important stuff by reading blog posts about CUDA. This particular <a href="https://research.colfax-intl.com/tutorial-matrix-transpose-in-cutlass/">blog post</a> was a rewrite of <a href="https://developer.nvidia.com/blog/efficient-matrix-transpose-cuda-cc/">a legendary technical blog post</a> about optimizing CUDA matrix transpose, but using CUTLASS (CUDA C++ template abstractions) instead of pure CUDA C++.</p>
+
+        <p>They use a nice technique called <a href="https://github.com/NVIDIA/cutlass/blob/main/include/cute/swizzle.hpp#L44">swizzling</a>, but glance over the technical details. While we could just ignore the details and use the template library, I think raw-dogging CUDA C++ is much more fun.</p>
+
+        <p>Anyway, what is even the problem we are solving here? Oh, right, shared memory bank conflicts. So, to briefly set the scene here, what if I told you that the super-fast, high-bandwidth and super-expensive HBM global memory powering the top of the line AI chips such as NVIDIA H100, is actually super-fucking-slow and CUDA kernel programming is mostly about avoiding it? This is done by first loading stuff to shared memory (much smaller, but much faster), doing computations and yeeting the results back to the global memory. When we allocate shared memory, it will look like this:</p>
+        <div style="display: inline-grid; grid-auto-flow: column;">
+          <div>Byte index:</div>
+          <div class="grid-row" style="margin-bottom: var(--space-xxs); margin-left: var(--space-xs);">
+            <div class="grid-item">0</div>
+            <div class="grid-item">1</div>
+            <div class="grid-item">2</div>  
+            <div class="grid-item">3</div>
+            <div class="grid-item">4</div>
+            <div class="grid-item">5</div>  
+            <div class="grid-item">6</div>
+            <div class="grid-item">7</div>
+            <div class="grid-item">8</div>  
+            <div class="grid-item">9</div>
+            <div class="grid-item">10</div>  
+            <div class="grid-item">11</div>
+            <div class="grid-item">12</div>  
+            <div class="grid-item">13</div>
+            <div class="grid-item">14</div>  
+            <div class="grid-item">15</div>
+          </div>
+        </div>
+        <div style="display: inline-grid; grid-auto-flow: column;">
+          <div>Bank:</div>
+          <div class="grid-row">
+            <div class="grid-item">0</div>
+            <div class="grid-item">0</div>
+            <div class="grid-item">0</div>  
+            <div class="grid-item">0</div>
+            <div class="grid-item">1</div>
+            <div class="grid-item">1</div>  
+            <div class="grid-item">1</div>
+            <div class="grid-item">1</div>
+            <div class="grid-item">2</div>  
+            <div class="grid-item">2</div>
+            <div class="grid-item">2</div>  
+            <div class="grid-item">2</div>
+            <div class="grid-item">3</div>  
+            <div class="grid-item">3</div>
+            <div class="grid-item">3</div>  
+            <div class="grid-item">3</div>
+          </div>
+        </div>
+        
+        <p></p>
+      </div>
+    </div>
+  </div>
+
+<!-- End Document
+  –––––––––––––––––––––––––––––––––––––––––––––––––– -->
+</body>
+</html>
