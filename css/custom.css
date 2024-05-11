@@ -40,7 +40,7 @@
   grid-auto-flow: column;  
   grid-auto-columns: var(--space-l);
   grid-auto-rows: var(--space-l);
-  grid-gap: 1px;
+  grid-gap: var(--space-xxs);
 }
 
 
