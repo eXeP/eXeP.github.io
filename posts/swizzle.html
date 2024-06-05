@@ -56,7 +56,9 @@
 
         <p>They use a nice technique called <a href="https://github.com/NVIDIA/cutlass/blob/main/include/cute/swizzle.hpp#L44">swizzling</a>, but glance over the technical details. While we could just ignore the details and use the template library, I think raw-dogging CUDA C++ is much more fun.</p>
 
-        <p>Anyway, what is even the problem we are solving here? Oh, right, shared memory bank conflicts. So, to briefly set the scene here, what if I told you that the super-fast, high-bandwidth and super-expensive HBM global memory powering the top of the line AI chips such as NVIDIA H100, is actually super-fucking-slow and CUDA kernel programming is mostly about avoiding it? This is done by first loading stuff to shared memory (much smaller, but much faster), doing computations and yeeting the results back to the global memory. When we allocate shared memory, it will look like this:</p>
+        <p>Anyway, what is even the problem we are solving here? Oh, right, shared memory bank conflicts. So, to briefly set the scene here, what if I told you that the super-fast, high-bandwidth and super-expensive HBM global memory powering the top of the line AI chips such as NVIDIA H100, is actually super-fucking-slow and CUDA kernel programming is mostly about avoiding it? This is done by first loading stuff to shared memory (much smaller, but much faster), doing the computations and yeeting the results back to the global memory.</p>
+
+        <p>Now, when we allocate shared memory, it will look like this:</p>
         <div class="row">
           <div class="two columns"><div>Byte index:</div></div>
           <div class="ten columns">
@@ -115,48 +117,61 @@
             </div>
           </div>
         </div>
-        <p>So the first 4 bytes (32 bits) are assigned to bank 0, the next 4 bytes are assigned to bank 0, etc. There are 32 banks on most NVIDIA GPUs, so after bank 31 the next 4 bytes go again to bank 0. A limitation of the shared memory is that only one thread of a warp (32 threads) can access a bank at a time. Bank conflicts happen when several threads in a warp try to access the same bank during the same cycle and access will become sequential and you code will be super-slow (some exceptions apply, read the CUDA docs for more). Avid readers might wonder why this is the case, in which case I suggest reading <a href="https://developer.nvidia.com/blog/using-shared-memory-cuda-cc/">this post.</a> Anyway, we just have to deal with it.</p>
+        <p>So the first 4 bytes (32 bits) are assigned to bank 0, the next 4 bytes are assigned to bank 0, etc. There are 32 banks on most NVIDIA GPUs, so after bank 31 the next 4 bytes go again to bank 0. Avid readers might wonder why this is the case, in which case I suggest reading <a href="https://developer.nvidia.com/blog/using-shared-memory-cuda-cc/">this post.</a> Anyway, as a wise man once said, it is what it is.</p>
 
-        <p><a href="https://developer.nvidia.com/blog/efficient-matrix-transpose-cuda-cc/">The legendary blog post</a> leaves us with the following transpose kernel (the full code is available on <a href="https://github.com/NVIDIA-developer-blog/code-samples/blob/master/series/cuda-cpp/transpose/transpose.cu">github</a>):</p>
+        <p>A limitation of the shared memory is that only one thread of a warp (32 threads) can access a bank at a time. Bank conflicts happen when several threads in a warp try to access the same bank during the same cycle and the limitation causes the access to become sequential. As a result, your code will be super-slow (some exceptions apply, read the CUDA docs for more).</p>
+
+        <p><a href="https://developer.nvidia.com/blog/efficient-matrix-transpose-cuda-cc/">The legendary blog post</a> leaves us with the following bank-conflictey transpose kernel (I highly recommend checking out the <a href="https://github.com/NVIDIA-developer-blog/code-samples/blob/master/series/cuda-cpp/transpose/transpose.cu">code</a> to understand how this kernel is called):</p>
         <pre><code>__global__ void transposeCoalesced(float *odata, const float *idata)
 {
   __shared__ float tile[TILE_DIM][TILE_DIM];
-
+    
   int x = blockIdx.x * TILE_DIM + threadIdx.x;
   int y = blockIdx.y * TILE_DIM + threadIdx.y;
   int width = gridDim.x * TILE_DIM;
 
-  for (int j = 0; j &lt; TILE_DIM; j += BLOCK_ROWS)
-     tile[threadIdx.y+j][threadIdx.x] = idata[(y+j)*width + x];
+  for (int j = 0; j < TILE_DIM; j += BLOCK_ROWS)
+     <b>tile[threadIdx.y+j][threadIdx.x] = idata[(y+j)*width + x];</b>
 
   __syncthreads();
 
   x = blockIdx.y * TILE_DIM + threadIdx.x;  // transpose block offset
   y = blockIdx.x * TILE_DIM + threadIdx.y;
 
-  for (int j = 0; j &lt; TILE_DIM; j += BLOCK_ROWS)
+  for (int j = 0; j < TILE_DIM; j += BLOCK_ROWS)
      odata[(y+j)*width + x] = tile[threadIdx.x][threadIdx.y + j];
 }
-
-int main() {
-  const int TILE_DIM = 32;
-  const int BLOCK_ROWS = 8;
-  const int nx = 1024;
-  const int ny = 1024;
-  const int mem_size = nx*ny*sizeof(float);
-  float *d_idata, *d_cdata, *d_tdata;
-  checkCuda( cudaMalloc(&d_idata, mem_size) );
-  checkCuda( cudaMalloc(&d_cdata, mem_size) );
-  checkCuda( cudaMalloc(&d_tdata, mem_size) );
-  dim3 dimGrid(nx/TILE_DIM, ny/TILE_DIM, 1);
-  dim3 dimBlock(TILE_DIM, BLOCK_ROWS, 1);
-  transposeCoalesced&lt;&lt;&lt;dimGrid, dimBlock&gt;&gt;&gt;(d_tdata, d_idata);
-  return 0;
-}
         </code></pre>
-        <p>The github code contains benchmarking, which handily tells us the performance of the kernel in terms of GB/s on my GTX 1080 Ti to be:<code>coalesced transpose              238.69 GB/s</code>, which is about half of the official maximum bandwidth of 484.4 GB/s. To reach closer to the limit, we will have to fix some shared memory bank conflicts: notice the first shared memory write <code>tile[threadIdx.y+j][threadIdx.x]</code>. The 32 threads in the first warp will span the first 32 block indices, which will be the combinations of <code>threadIdx.x = 0, 1, 2, 3</code> and <code>threadIdx.y = 0, 1, 2, 3, 4, 5, 6, 7</code>.</p>
-        <p>(0, 0), j=0 -> tile[threadIdx.y+j][threadIdx.x] -> tile[0 * 32 + 0] -> 0 -> 0 modulo 32</p>
-        
+        <p>This code causes bank conflicts, because the <code>TILE_DIM = 32</code> coincides with the number of shared memory banks, leading to all threads of a warp accessing the same bank at the same time (happens on the bolded line of code). We can make the code non-bank-conflictey by simply uncoinciding the shared memory banks and TILE_DIM:</p>
+        <pre><code>__global__ void transposeNoBankConflicts(float *odata, const float *idata)
+{
+  __shared__ float tile[TILE_DIM][TILE_DIM<b>+1</b>];
+  ...</code></pre>
+        <p>Benchmarking this code with a matrix of size 2048 by 2048 and averaging over a thousand runs yields us the following result: </p>
+        <pre><code>coalesced transpose              357.58
+conflict-free transpose          401.39</code></pre>
+        <p>Which is about 74% and 83%, respectively, of my GTX 1080 Ti's official maximum bandwidth 484.4 GB/s. So simply by adding that <code>+1</code> to the shared memory tile dimension, our bandwidth increased by quite a lot. But what if I don't want to allocate a bunch of unused memory? Well, then we <b>swizzle</b>:</p>
+        <pre><code>__global__ void transposeNoBankConflictsSwizzle(float *odata, const float *idata)
+{
+  <b>__shared__ float tile[TILE_DIM][TILE_DIM];</b>
+    
+  int x = blockIdx.x * TILE_DIM + threadIdx.x;
+  int y = blockIdx.y * TILE_DIM + threadIdx.y;
+  int width = gridDim.x * TILE_DIM;
+
+  for (int j = 0; j < TILE_DIM; j += BLOCK_ROWS)
+      <b>tile[threadIdx.y+j][threadIdx.x^(threadIdx.y+j)] = idata[(y+j)*width + x];</b>
+
+  __syncthreads();
+
+  x = blockIdx.y * TILE_DIM + threadIdx.x;  // transpose block offset
+  y = blockIdx.x * TILE_DIM + threadIdx.y;
+
+  for (int j = 0; j < TILE_DIM; j += BLOCK_ROWS)
+      <b>odata[(y+j)*width + x] = tile[threadIdx.x][(threadIdx.y + j)^threadIdx.x];</b>
+}</code></pre>
+        <p>Benchmarking using the same parameters yields us a similar bandwidth, but without the unused shared memory allocation: <code>conflict-free transpose swizzle              402.46</code>.</p>
+        <p>But does it actually do? It's a reordering of shared memory using xor, which conveniently provides a one-to-one mapping inside each row of the shared memory tile. The reordering is random enough to remove most of the bank conflicts.</p>
       </div>
     </div>
   </div>
