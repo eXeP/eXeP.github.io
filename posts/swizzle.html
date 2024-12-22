@@ -131,7 +131,7 @@
   int width = gridDim.x * TILE_DIM;
 
   for (int j = 0; j < TILE_DIM; j += BLOCK_ROWS)
-     <b>tile[threadIdx.y+j][threadIdx.x] = idata[(y+j)*width + x];</b>
+     tile[threadIdx.y+j][threadIdx.x] = idata[(y+j)*width + x];
 
   __syncthreads();
 
@@ -139,15 +139,58 @@
   y = blockIdx.x * TILE_DIM + threadIdx.y;
 
   for (int j = 0; j < TILE_DIM; j += BLOCK_ROWS)
-     odata[(y+j)*width + x] = tile[threadIdx.x][threadIdx.y + j];
+     <b>odata[(y+j)*width + x] = tile[threadIdx.x][threadIdx.y + j];</b>
 }
         </code></pre>
-        <p>This code causes bank conflicts, because the <code>TILE_DIM = 32</code> coincides with the number of shared memory banks, leading to all threads of a warp accessing the same bank at the same time (happens on the bolded line of code). We can make the code non-bank-conflictey by simply uncoinciding the shared memory banks and TILE_DIM:</p>
+        <p>This code causes bank conflicts, because the <code>TILE_DIM = 32</code> coincides with the number of shared memory banks, leading to all threads of a warp accessing the same bank at the same time (happens on the bolded line of code). Let's see how this actually happens in the first warp during the first iteration of the loop over TILE_DIM:</p>
+        <table class="u-full-width">
+          <thead>
+            <tr>
+              <th>threadIdx.x</th>
+              <th>threadIdx.y</th>
+              <th>tile[threadIdx.x][threadIdx.y + j]</th>
+              <th>bank</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>0</td>
+              <td>0</td>
+              <td>tile[0][0]</td>
+              <td>0</td>
+            </tr>
+            <tr>
+              <td>1</td>
+              <td>0</td>
+              <td>tile[1][0]</td>
+              <td>0</td>
+            </tr>
+            <tr>
+              <td>2</td>
+              <td>0</td>
+              <td>tile[2][0]</td>
+              <td>0</td>
+            </tr>
+            <tr>
+              <td>⋮</td>
+              <td>⋮</td>
+              <td>⋮</td>
+              <td>⋮</td>
+            </tr>
+            <tr>
+              <td>31</td>
+              <td>0</td>
+              <td>tile[31][0]</td>
+              <td>0</td>
+            </tr>
+          </tbody>
+        </table>
+        <p>As you can see, all of the reads are to the same bank, which will cause sequential access and a slowdown. A simple trick to make the code non-bank-conflictey is by uncoinciding the shared memory banks and TILE_DIM:</p>
         <pre><code>__global__ void transposeNoBankConflicts(float *odata, const float *idata)
 {
   __shared__ float tile[TILE_DIM][TILE_DIM<b>+1</b>];
   ...</code></pre>
-        <p>Benchmarking this code with a matrix of size 2048 by 2048 and averaging over a thousand runs yields us the following result: </p>
+        <p>However, this will use some extra memory, and makes me feel dirty. Benchmarking this code with a matrix of size 2048 by 2048 and averaging over a thousand runs yields us the following result: </p>
         <pre><code>coalesced transpose              357.58
 conflict-free transpose          401.39</code></pre>
         <p>Which is about 74% and 83%, respectively, of my GTX 1080 Ti's official maximum bandwidth 484.4 GB/s. So simply by adding that <code>+1</code> to the shared memory tile dimension, our bandwidth increased by quite a lot. But what if I don't want to allocate a bunch of unused memory? Well, then we <b>swizzle</b>:</p>
@@ -170,8 +213,53 @@ conflict-free transpose          401.39</code></pre>
   for (int j = 0; j < TILE_DIM; j += BLOCK_ROWS)
       <b>odata[(y+j)*width + x] = tile[threadIdx.x][(threadIdx.y + j)^threadIdx.x];</b>
 }</code></pre>
-        <p>Benchmarking using the same parameters yields us a similar bandwidth, but without the unused shared memory allocation: <code>conflict-free transpose swizzle              402.46</code>.</p>
-        <p>But does it actually do? It's a reordering of shared memory using xor, which conveniently provides a one-to-one mapping inside each row of the shared memory tile. The reordering is random enough to remove most of the bank conflicts.</p>
+        <p>But what's actually going on here? The xor-operator provides convenient one-to-one mapping inside each row of the shared memory tile. Here's how it changes the table above:</p>
+        <table class="u-full-width">
+          <thead>
+            <tr>
+              <th>threadIdx.x</th>
+              <th>threadIdx.y</th>
+              <th>tile[threadIdx.x][(threadIdx.y + j)^threadIdx.x]</th>
+              <th>bank</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>0</td>
+              <td>0</td>
+              <td>tile[0][0]</td>
+              <td>0</td>
+            </tr>
+            <tr>
+              <td>1</td>
+              <td>0</td>
+              <td>tile[1][1]</td>
+              <td>1</td>
+            </tr>
+            <tr>
+              <td>2</td>
+              <td>0</td>
+              <td>tile[2][2]</td>
+              <td>2</td>
+            </tr>
+            <tr>
+              <td>⋮</td>
+              <td>⋮</td>
+              <td>⋮</td>
+              <td>⋮</td>
+            </tr>
+            <tr>
+              <td>31</td>
+              <td>0</td>
+              <td>tile[31][31]</td>
+              <td>31</td>
+            </tr>
+          </tbody>
+        </table>
+        <p>As you can see, now there are zero bank conflicts inside of the warp!</p>
+        <p>Benchmarking using the same parameters yields us a similar bandwidth, but without the unused shared memory allocation: 
+        <pre><code>conflict-free transpose swizzle              402.46</code></pre>
+        <p>Which is in the same ballpark as the extra memory trick.</p>
       </div>
     </div>
   </div>
