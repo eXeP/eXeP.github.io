@@ -2,6 +2,27 @@
 <html lang="en">
 <head>
 
+<!-- Include KaTeX CSS -->
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.22/dist/katex.min.css" integrity="sha384-5TcZemv2l/9On385z///+d7MSYlvIEw9FuZTIdZ14vJLqWphw7e7ZPuOiCHJcFCP" crossorigin="anonymous">
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.22/dist/katex.min.js" integrity="sha384-cMkvdD8LoxVzGF/RPUKAcvmm49FQ0oxwDF3BGKtDXcEc+T1b2N+teh/OJfpU0jr6" crossorigin="anonymous"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.22/dist/contrib/auto-render.min.js" integrity="sha384-hCXGrW6PitJEwbkoStFjeJxv+fSOOQKOPbJxSfM6G5sWZjAyWhXiTIIAmQqnlLlh" crossorigin="anonymous"></script>
+<script>
+    document.addEventListener("DOMContentLoaded", function() {
+        renderMathInElement(document.body, {
+          // customised options
+          // • auto-render specific keys, e.g.:
+          delimiters: [
+              {left: '$$', right: '$$', display: true},
+              {left: '$', right: '$', display: false},
+              {left: '\\(', right: '\\)', display: false},
+              {left: '\\[', right: '\\]', display: true}
+          ],
+          // • rendering keys, e.g.:
+          throwOnError : false,
+          ignoredTags : ["script", "noscript", "style", "textarea", "option"]
+        });
+    });
+</script>
   <!-- Basic Page Needs
   –––––––––––––––––––––––––––––––––––––––––––––––––– -->
   <meta charset="utf-8">
@@ -27,7 +48,77 @@
   <!-- Favicon
   –––––––––––––––––––––––––––––––––––––––––––––––––– -->
   <link rel="icon" type="image/png" href="/images/favicon.png">
+  <style>
 
+      .image-display {
+          margin-bottom: 30px;
+          min-height: 300px; /* Adjust as needed */
+          display: flex;
+          justify-content: center;
+          align-items: center;
+          border: 1px solid #ddd;
+          border-radius: 4px;
+          background-color: #fafafa;
+          overflow: hidden; /* Hide potential broken image icon overflow */
+      }
+
+      #paramImage {
+          max-width: 100%;
+          max-height: 400px; /* Adjust max height as needed */
+          display: block; /* Remove extra space below image */
+      }
+
+      /* Fallback text if image fails to load */
+      #paramImage[alt]:after {
+          content: attr(alt);
+          display: block;
+          color: #888;
+          font-style: italic;
+          padding: 20px;
+      }
+
+
+      .controls {
+          display: grid;
+          grid-template-columns: auto 1fr auto; /* Label | Slider | Value */
+          gap: 10px 15px; /* Row gap | Column gap */
+          align-items: center;
+      }
+
+      .controls label {
+          font-weight: bold;
+          text-align: right;
+          color: #555;
+      }
+
+      .controls input[type="range"] {
+          width: 100%;
+          cursor: pointer;
+      }
+
+      .controls .value-display {
+          font-family: monospace;
+          font-weight: bold;
+          background-color: #e9e9e9;
+          padding: 3px 8px;
+          border-radius: 4px;
+          min-width: 40px; /* Ensure consistent width */
+          text-align: center;
+          color: #333;
+      }
+
+      .filename-display {
+          margin-top: 25px;
+          font-family: monospace;
+          color: #666;
+          word-wrap: break-word; /* Wrap long filenames */
+          font-size: 0.9em;
+          background: #f0f0f0;
+          padding: 8px;
+          border-radius: 3px;
+      }
+
+  </style>
 </head>
 <body>
 
@@ -44,17 +135,215 @@
       </div>
     </nav>
     <div class="row" style="padding: 2rem 0; margin-bottom:2rem; border-bottom: 1px solid #eee;" >
-      <h5 style="margin:0"><span style='font-weight: bold;'>All the ways to guide a diffusion model</span></h5>
+      <h4 style="margin:0"><span style='font-weight: bold;'>All of the ways to guide a diffusion model</span></h4>
       <p style="margin:0"><h7>15.12.2024</h7></p>
-      <h7>A blog post aiming to explain and visualize all of the ways to guide a diffusion model.</h7>
+      <h7>This post aims to explain common ways to guide diffusion models, in order to get better samples out of them.</h7>
     </div>
     <div class="row">
       <div class="twelve columns">
-        <p></p>
+        <p>I'll start by quickly introducing diffusion models and some formalism here, but if you know what is up then just skip this section. This post is mainly written for people who already have a good grasp on deep learning and diffusion, but I'll start with a small introduction to broaden the possible audience of this post.</p>
+
+        <p>Let's get right into it. We have some dataset which contains some actual data <b>x</b> and each datapoint has a corresponging condition <b>c</b>. Often, the dataset consists of images and their labels: e.g, an image of a dog (<b>x</b>) and a text label "a dog running" (<b>c</b>). What we want now is to train a magical model that takes in a new text prompt like "a dog biting the ankle of my middle school bully", which then promptly returns an adequate image fitting the input text prompt.</p>
+
+        <p>We can do this by training a diffusion model $D_{\theta}(x+n, c)$ on our dataset. Diffusion models are trained by adding some noise (<b>n</b>) to the images and training the model to remove that noise, given the text condition. If we train the model using all noise levels from <i>pure noise</i> to <i>very little noise</i>, we can then during inference start from pure noise (and a text prompt) and denoise it all the way to a clean image.</p>
         
+        <p>Let's see what this looks like in pseudocode:</p>
+        <pre><code>x = n
+for timestep in range(0, timesteps):
+    x = $D_{\theta}(x, c)$</code></pre>
+        
+        <p>Simple, right? After this the denoised x is your requested image.</p>
+        
+
+        <h5><b>Why do we need guidance?</b></h5>
+        <p>Now, let's generate a beautiful image using the <a href="https://huggingface.co/Freepik/F-Lite">F-Lite model</a> to see what a text-to-image diffusion model can do:</p>
+        <img style="max-width: 80%;" src="/images/no_cfg_dog.webp">
+        <p>That might or might not be a "A dog running on a field".</p>
+
+        <p>So why does this happen? The best explanation so far I've heard is from the <a href="https://arxiv.org/pdf/2406.02507">Autoguidance paper</a>: "The training objective of a diffusion model aims to cover the entire (conditional) data distribution. This causes problems in low-probability regions: The model gets heavily penalized for not representing them, but it does not have enough data to learn to generate good images corresponding to them."</p>
+
+        <p>The model is forced by training to try be good at everything, and thus turns out be below average in everything. We need to figure out a way to nudge the model towards outputs that it is confident and actually good at generating.</p>
+
+        <p>But how to do that? Could we for example train a classifier on good and bad images that would steer the generation process? Yeah, but there are better options.</p>
+        
+        <h5><b>Classifier-free guidance (CFG)</b></h5>
+        <p>Instead of training a separate "good images" vs "bad images" classifier, could we use the diffusion model for guiding itself? Turns out <a href="https://arxiv.org/abs/2207.12598"> we can</a>: the trick is jointly train an unconditional diffusion model $D_{\theta}(x)$ and a conditional diffusion model $D_{\theta}(x, c)$ and use the uncondtional model to see <i>which way not to go.</i></p>
+
+        <p>What this looks like during training is that the label (<b>c</b>) is randomly dropped (usually 10%ish). So in the case of images and their labels, the labels would be dropped.</p>
+
+        <p>During inference, we then will go towards our conditional prediction $D_{\theta}(x, c)$, but also away from the unconditional one -$D_{\theta}(x, c)$. We will control the strength of "how far away we should go from unconditional prediction" with parameter <b>w</b>, which starts from 1 (no CFG) and can be increased to infinity. Here's how the inference loop looks for CFG:</p>
+        <pre><code>x = n
+w = scalar [1, $\infty$[
+for timestep in range(0, timesteps):
+    x = w$D_{\theta}(x, c)$ + (1-w)$D_{\theta}(x, c)$</code></pre>
+
+        <p>Let's generate the same "A dog running on a field" image, but this time with a CFG of 6:</p>
+        <img style="max-width: 80%;" src="/images/cfg6_dog.webp">
+
+        <p>Now the image definitely contains a dog running on a field! But as you can see, this isn't without it's tradeoffs. While using CFG, the model decided to use a much simpler overall style (cartoonish) instead of "photoreal" like in the first image. This hints at the model being more confident with simpler styles in general, either due to their innate simplicity or the training data used.</p>
+
+        <h5><b>Adaptive projected guidance (APG)</b></h5>
+        <p>Now, CFG is fine, but what if you really need to crank it up? Let's see our canine image with a CFG of 15:</p>
+        
+        <img style="max-width: 80%;" src="/images/cfg15_dog.webp">
+        
+        <p>Damn, shit looks awful. Fortunately, the authors of the <a href="https://arxiv.org/abs/2410.02416">APG paper</a> found an interesting trick: you can decompose the CFG-term into parallel and orthogonal components w.r. to the conditional prediction and observe that the parallel component primarily oversaturates the image while the orthogonal components enhances the image.</p>
+        
+        <p>They also added some momentum and rescaling terms by connecting CFG to gradient descent, but that's not the meat here. Now, let's make that canine look better with an APG of 15:</p>
+    
+        <img style="max-width: 80%;" src="/images/apg15_dog.webp">
+
+        <p>Here's an interactive visualization for all of the APG-papers new juicy hyperparameters: Eta (η) which controls how much the parallel component is preferred, R which controls the rescaling radius and Beta (β) which controls how much the previous timesteps prediction contribute.</p>
+        TODO: Should I remove the R and beta params?
+        <div class="container">
+            <div class="image-display">
+                <img id="paramImage" src="" alt="Image will load here based on parameters. Ensure files exist at the specified path.">
+            </div>
+        
+            <div class="controls">
+                <!-- Eta Slider -->
+                <label for="etaSlider">Eta (η):</label>
+                <input type="range" id="etaSlider" name="eta"
+                      min="0.0" max="1.0" value="0.0" step="0.2">
+                      <!-- ADJUST min, max, step for eta -->
+                <span class="value-display" id="etaValue">0.0</span>
+        
+                <!-- R Slider -->
+                <label for="rSlider">R:</label>
+                <input type="range" id="rSlider" name="r"
+                      min="0.0" max="5.0" value="0.0" step="0.5">
+                      <!-- ADJUST min, max, step for r -->
+                <span class="value-display" id="rValue">0.0</span>
+        
+                <!-- Beta Slider -->
+                <label for="betaSlider">Beta (β):</label>
+                <input type="range" id="betaSlider" name="beta"
+                      min="-1.0" max="0.0" value="-0.5" step="0.25">
+                      <!-- ADJUST min, max, step for beta -->
+                <span class="value-display" id="betaValue">-0.5</span>
+            </div>
+        </div>      
+        <h5><b>A bad version of itself</b></h5>
+        <p></p>
+        <h5><b>Guidance distillation</b></h5>
+        <p></p>
+        <h5><b>Negative prompts</b></h5>
+        <p></p>
       </div>
     </div>
   </div>
+
+
+<script>
+  // Get references to the DOM elements
+  const etaSlider = document.getElementById('etaSlider');
+  const rSlider = document.getElementById('rSlider');
+  const betaSlider = document.getElementById('betaSlider');
+
+  const etaValueDisplay = document.getElementById('etaValue');
+  const rValueDisplay = document.getElementById('rValue');
+  const betaValueDisplay = document.getElementById('betaValue');
+
+  const paramImage = document.getElementById('paramImage');
+  const filenameDisplay = document.getElementById('currentFilename');
+
+  // --- Configuration ---
+  // Define the base path where your images are located on the server
+  // Use a leading slash '/' for an absolute path from the server root.
+  const imageBasePath = '/images/apg_figs/';
+  const forbiddenRValue = 1.5;
+  // ---------------------
+
+  // Function to format a number for the filename part
+  function formatValueForFilename(value) {
+      const formattedValue = parseFloat(value).toFixed(2);
+      return formattedValue.replace('.', '_').replace('00', '0').replace('10', '1').replace('20', '2').replace('30', '3').replace('40', '4').replace('50', '5').replace('60', '6').replace('70', '7').replace('80', '8').replace('90', '9');
+  }
+
+  // Function to generate the full image path based on current slider values
+  function generateImagePath() {
+      const eta = etaSlider.value;
+      const r = rSlider.value;
+      const beta = betaSlider.value;
+
+      const formattedEta = formatValueForFilename(eta);
+      const formattedR = formatValueForFilename(r);
+      const formattedBeta = formatValueForFilename(beta);
+
+      // Construct the filename part
+      const filenamePart = `Fig_eta${formattedEta}_r${formattedR}_beta${formattedBeta}.jpg`;
+
+      // Combine the base path and the filename part
+      const fullPath = imageBasePath + filenamePart;
+      return fullPath;
+  }
+
+  // Function to update the image source and display values
+  function updateImageAndValues() {
+      // Update displayed numerical values next to sliders
+      etaValueDisplay.textContent = parseFloat(etaSlider.value).toFixed(2);
+      rValueDisplay.textContent = parseFloat(rSlider.value).toFixed(2);
+      betaValueDisplay.textContent = parseFloat(betaSlider.value).toFixed(2);
+
+      // Generate the new full image path
+      const newImagePath = generateImagePath();
+
+      // Update the image source
+      paramImage.src = newImagePath;
+      // Update the displayed requested path
+      filenameDisplay.textContent = newImagePath;
+
+      // Update alt text in case image fails to load
+      paramImage.alt = `Trying to load: ${newImagePath}. If blank, check path and server.`;
+  }
+
+  // Add event listeners to sliders
+  etaSlider.addEventListener('input', updateImageAndValues);
+  rSlider.addEventListener('input', updateImageAndValues);
+  betaSlider.addEventListener('input', updateImageAndValues);
+
+  // Listener for R slider (with skipping logic)
+  rSlider.addEventListener('input', () => {
+      let currentValue = parseFloat(rSlider.value);
+      const step = parseFloat(rSlider.step);
+
+      // Check if the current value is the one we want to skip
+      // Use a small tolerance for floating point comparison if step wasn't exact
+        // but with step=0.5, direct comparison should be safe.
+      if (currentValue === forbiddenRValue) {
+          // Determine direction: were we sliding up or down?
+          if (previousRValue < forbiddenRValue) {
+              // Sliding up, landed on 1.5 -> jump to next step (2.0)
+              currentValue += step;
+          } else {
+              // Sliding down, landed on 1.5 -> jump to previous step (1.0)
+              currentValue -= step;
+          }
+          // Clamp value to min/max bounds just in case
+          currentValue = Math.max(parseFloat(rSlider.min), Math.min(parseFloat(rSlider.max), currentValue));
+
+          // *** Force the slider's value to the corrected one ***
+          rSlider.value = currentValue.toFixed(1); // Use toFixed to match step precision
+      }
+
+      // Update the previous value state *after* potential correction
+      previousRValue = currentValue;
+
+      // Now call the main update function which will read the (potentially corrected) value
+      updateImageAndValues();
+  });
+
+  // Add error handling for the image
+  paramImage.onerror = function() {
+      console.error("Error loading image:", paramImage.src);
+      // CSS provides alt text fallback
+  };
+
+  // Initial setup on page load
+  document.addEventListener('DOMContentLoaded', updateImageAndValues);
+
+</script>
+
 
 <!-- End Document
   –––––––––––––––––––––––––––––––––––––––––––––––––– -->
