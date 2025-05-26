@@ -136,7 +136,7 @@
     </nav>
     <div class="row" style="padding: 2rem 0; margin-bottom:2rem; border-bottom: 1px solid #eee;" >
       <h4 style="margin:0"><span style='font-weight: bold;'>All of the ways to guide a diffusion model</span></h4>
-      <p style="margin:0"><h7>15.12.2024</h7></p>
+      <p style="margin:0"><h7>26.5.2025</h7></p>
       <h7>This post aims to explain common ways to guide diffusion models, in order to get better samples out of them.</h7>
     </div>
     <div class="row">
@@ -148,21 +148,22 @@
         <p>We can do this by training a diffusion model $D_{\theta}(x+n, c)$ on our dataset. Diffusion models are trained by adding some noise (<b>n</b>) to the images and training the model to remove that noise, given the text condition. If we train the model using all noise levels from <i>pure noise</i> to <i>very little noise</i>, we can then during inference start from pure noise (and a text prompt) and denoise it all the way to a clean image.</p>
         
         <p>Let's see what this looks like in pseudocode:</p>
-        <pre><code>x = n
+        <pre><code>x = N(0, 1) # Initialize x to pure noise
 for timestep in range(0, timesteps):
-    x = $D_{\theta}(x, c)$</code></pre>
+    x = $D_{\theta}(x, c)$ # Take a denoising step</code></pre>
         
         <p>Simple, right? After this the denoised x is your requested image.</p>
         
-
         <h5><b>Why do we need guidance?</b></h5>
-        <p>Now, let's generate a beautiful image using the <a href="https://huggingface.co/Freepik/F-Lite">F-Lite model</a> to see what a text-to-image diffusion model can do:</p>
+        <p>Now, let's use the above algorithm generate a beautiful image using the <a href="https://huggingface.co/Freepik/F-Lite">F-Lite model</a> and the prompt "A dog running on a field":</p>
         <img style="max-width: 80%;" src="/images/no_cfg_dog.webp">
-        <p>That might or might not be a "A dog running on a field".</p>
+        <p>Oof, well it's definitely a field, but the dog-assumed doesn't seem to be running, or for that matter dogging.</p>
 
-        <p>So why does this happen? The best explanation so far I've heard is from the <a href="https://arxiv.org/pdf/2406.02507">Autoguidance paper</a>: "The training objective of a diffusion model aims to cover the entire (conditional) data distribution. This causes problems in low-probability regions: The model gets heavily penalized for not representing them, but it does not have enough data to learn to generate good images corresponding to them."</p>
+        <p>So why does this happen? Were the thousands of GPU hours used for the training of this model in waste?!? Nah, we just need a better way to sample from the model. Now, this does still sound quite controversial, as the first algorithm I presented is using the model exactly as it is trained, so it should do better, right?</p>
+        
+        <p>The best explanation I've heard for why the above algorithm is not enough is from the <a href="https://arxiv.org/pdf/2406.02507">Autoguidance paper</a>: "The training objective of a diffusion model aims to cover the entire (conditional) data distribution. This causes problems in low-probability regions: The model gets heavily penalized for not representing them, but it does not have enough data to learn to generate good images corresponding to them."</p>
 
-        <p>The model is forced by training to try be good at everything, and thus turns out be below average in everything. We need to figure out a way to nudge the model towards outputs that it is confident and actually good at generating.</p>
+        <p>The model is forced by training and the large datasets to learn an unimaginably large set of different prompts, images and noise levels, and thus turns out be below average in generating images that we humans think are good looking. We need to figure out a way to nudge the model towards outputs that it is confident and actually good at generating.</p>
 
         <p>But how to do that? Could we for example train a classifier on good and bad images that would steer the generation process? Yeah, but there are better options.</p>
         
@@ -170,13 +171,13 @@ for timestep in range(0, timesteps):
         <p>Instead of training a separate "good images" vs "bad images" classifier, could we use the diffusion model for guiding itself? Turns out <a href="https://arxiv.org/abs/2207.12598"> we can</a>: the trick is to jointly train an unconditional diffusion model $D_{\theta}(x)$ and a conditional diffusion model $D_{\theta}(x, c)$ and use the uncondtional model to see <i>which way not to go.</i> If we know during generation "which way we should not go" and "which way we should go", we can draw an arrow from the "which way we should not go" to "which way we should go" and then <i>go even more into that direction</i>. This allows us a tradeoff: the more we go into the direction of this arrow, the better our images will look, but the drawback is that we lose diversity if we go too far.</p>
         TODO: maybe make an illustration of cfg here.
 
-        <p>What this looks like during training is that the label (<b>c</b>) is randomly dropped (usually 10%ish). So in the case of images and their labels, the labels would be dropped. During training, if we happen to get a sample that is really noisy and a dropped prompt, then how is the model to know what kind of an image it is generating? Yeah, the model really can't know and will be pretty bad, which is perfect for "which way we should not go".</p>
+        <p>What this looks like during training is that the label (<b>c</b>) is randomly dropped (usually 10%ish). So in the case of images and their labels, the labels would be dropped. During training, if we happen to get a sample that is really noisy and a dropped prompt, then how is the model to know what kind of an image it is generating? Yeah, the model really can't know and the result will be pretty bad, which is perfect for "which way we should not go".</p>
 
-        <p>During inference, we then will go towards our conditional prediction $D_{\theta}(x, c)$, but also away from the unconditional one -$D_{\theta}(x, c)$. We will control the strength of "how far away we should go from unconditional prediction" with parameter <b>w</b>, which starts from 1 (no CFG) and can be increased to infinity. Here's how the inference loop looks for CFG:</p>
+        <p>During inference, we then will go towards our conditional prediction $D_{\theta}(x, c)$, but also away from the unconditional one -$D_{\theta}(x, c)$. The strength of "how far away we should go from unconditional prediction" is controlled with parameter <b>w</b>, which starts from 1 (no CFG) and can be increased to infinity. Here's how the inference loop looks for CFG:</p>
         <pre><code>x = n
 w = scalar [1, $\infty$[
 for timestep in range(0, timesteps):
-    x = w$D_{\theta}(x, c)$ + (1-w)$D_{\theta}(x, c)$</code></pre>
+    x = w$D_{\theta}(x, c)$ + (1-w)$D_{\theta}(x)$</code></pre>
 
         <p>Let's generate the same "A dog running on a field" image, but this time with a CFG of 6:</p>
         <img style="max-width: 80%;" src="/images/cfg6_dog.webp">
@@ -190,12 +191,26 @@ for timestep in range(0, timesteps):
         
         <p>Damn, shit looks awful. Fortunately, the authors of the <a href="https://arxiv.org/abs/2410.02416">APG paper</a> found an interesting trick: you can decompose the CFG-term into parallel and orthogonal components w.r. to the conditional prediction and observe that the parallel component primarily oversaturates the image while the orthogonal components enhances the image.</p>
         
-        <p>They also added some momentum and rescaling terms by connecting CFG to gradient descent, but that's not the meat here. Now, let's make that canine look better with an APG of 15:</p>
+        <p>They also added some momentum and rescaling terms inspired by connecting CFG to gradient descent, but that's not the meat here. Now, let's make that canine look better with an APG of 15:</p>
     
         <img style="max-width: 80%;" src="/images/apg15_dog.webp">
 
-        <p>Here's an interactive visualization for all of the APG-papers new juicy hyperparameters: Eta (η) which controls how much the parallel component is preferred, R which controls the rescaling radius and Beta (β) which controls how much the previous timesteps prediction contribute.</p>
-        TODO: Should I remove the R and beta params?
+        <p>Much better, right? CFG/APG of 15 is quite a lot though, so you should definitely keep to saner values of 2-8 and leave anything larger for the purposes of getting points across in a shitty blog post.</p>
+        
+        <p>Here's the APG inference loop (with just the projection trick):</p>
+        <pre><code>x = n
+w = scalar [1, $\infty$[
+eta = scalar [1, $\infty$[
+for timestep in range(0, timesteps):
+    cond_x = $D_{\theta}(x, c)$
+    uncond_x = $D_{\theta}(x)$
+    diff = cond_x - uncond_x
+    diff_parallel, diff_orthogonal = project(diff, cond_x)
+    normalized_update = diff_orthogonal + eta diff_parallel
+    x = w pred_x + (w-1) normalized_update
+    </code></pre>
+        <p>Here's an interactive visualization for all of the APG-papers new juicy hyperparameters: Eta (η) controls how much the parallel component is preferred, R controls the rescaling radius and Beta (β) controls how much the previous timesteps predictions contribute. I didn't bother to explain the other parameters properly here, as they don't seem to be in practical use anywhere. But I already made the visualization so voilà, three sliders.</p>
+        
         <div class="container">
             <div class="image-display">
                 <img id="paramImage" src="" alt="Image will load here based on parameters. Ensure files exist at the specified path.">
@@ -223,12 +238,18 @@ for timestep in range(0, timesteps):
                       <!-- ADJUST min, max, step for beta -->
                 <span class="value-display" id="betaValue">-0.5</span>
             </div>
-        </div>      
+        </div>
+
         <h5><b>A bad version of itself</b></h5>
         <p></p>
+        
         <h5><b>Guidance distillation</b></h5>
+        <p>With the trend of insanely large and slow models such as the Flux-series by BFL, image creation time has become somewhat cumbersome. Surprisingly, there exists a trick to save half of the computation time when generating images using CFG: instead of computing the conditional $D_{\theta}(x, c)$ and unconditional $D_{\theta}(x)$ we can train a model $D_{\theta}(x, c, w)$ that simply outputs the result of CFG w$D_{\theta}(x, c)$ + (1-w)$D_{\theta}(x)$.</p>
+
+        <p>This can be done by starting from a trained diffusion model and training it further to output as if CFG was being applied.</p>
+        <p>This has the (probably intended) consequence that the models that have been distilled in this way become much harder to finetune or make loras for. Great if you want to make your users pay for model customization.</p>
         <p></p>
-        <h5><b>Negative prompts</b></h5>
+        <h5><b>Negative prompts/embeddings</b></h5>
         <p></p>
       </div>
     </div>
