@@ -136,30 +136,62 @@
     </nav>
     <div class="row" style="padding: 2rem 0; margin-bottom:2rem; border-bottom: 1px solid #eee;" >
       <h4 style="margin:0"><span style='font-weight: bold;'>On Altman's Lies and Journalism</span></h4>
-      <p style="margin:0"><h7>23.6.2025</h7></p>
-      <h7>Did Altman lie when </h7>
+      <p style="margin:0"><h7>30.6.2025</h7></p>
     </div>
     <div class="row">
       <div class="twelve columns">
-        <p>In this <a href="https://blog.samaltman.com/the-gentle-singularity">blog post</a> Sam Altman put forth the preposterous, possible even dangerous and especially uncited claim that an average ChatGPT query uses about 0.34 Watt-hours. While my initial though was, huh, nice, seems about right.</p>
+        <p>In this <a href="https://blog.samaltman.com/the-gentle-singularity">blog post</a> Sam Altman put forth the preposterous, possibly even dangerous and especially <i>uncited</i> claim that an average ChatGPT query uses about 0.34 Watt-hours. The claim has of course incited a flurry of articles from respectable tech outlets such as <a href="https://gizmodo.com/sam-altmans-lies-about-chatgpt-are-growing-bolder-2000614431">here</a> and <a href="https://www.theverge.com/news/685045/sam-altman-average-chatgpt-energy-water?utm_source=nl&utm_brand=wired&utm_mailing=WIR_AILab_061125&utm_campaign=aud-dev&utm_medium=email&utm_content=WIR_AILab_061125&bxid=&cndid=&hasha=23463b99b62a72f26ed677cc556c44e8&hashc=31c5543c1734d25c7206f5fd591525d0295bec6fe84ff82f946a34fe970a1e66&esrc=&utm_term=WIR_Transportation">here</a>, questioning the validity. As everyone knows, the claim cannot be true. AI guzzles energy and every precious Watt-hour devoured by these demonic algorithms directly heats the planet and makes your matcha lattes more expensive by increasing the cost of already scarce energy.</p>
+
+        <p>Fortunately, we can try to deduce just how much off Altman's lie actually is by estimating the energy usage ourselves. We know that some basic facts:</p>
+        <ul>
+          <li>ChatGPT uses the GPT-4o model. Source: <a href="https://platform.openai.com/docs/models/chatgpt-4o-latest">OpenAI.</a></li>
+          <li>An average ChatGPT query results in about 300 output tokens. Source: <a href="https://arxiv.org/pdf/2403.04132"> Chiang et al, page 4, table 1.</a></li>
+          <li>GPT-4o can output around 180 tokens per second. Source: <a href="https://artificialanalysis.ai/models/gpt-4o-chatgpt-03-25">artificialanalysis.ai.</a></li>
+        </ul>
         
-        <p>This number has been questioned quite a lot: TODO articles here</p>
-        <p>Most queries for chatgpt are using gpt4o or gpt4o-mini. gpt4o is about 200B params: https://arxiv.org/pdf/2412.19260v1</p>
-        <p>Supermicro https://smicro.eu/nvidia-delta-next-hgx-gpu-baseboard-8-h100-80gb-sxm5-935-24287-0000-000-1</p>
-        <p>
-          - 8x H100 nodes uses 5600W
-          - Average chatgpt query answer takes 5 seconds
-          - Artificialanalysis says gpt-40 can do about 200 tokens/second
-          
-          Other:
-          - Average chatgpt query is 23 words
-          - Average output length 500 tokens
-        </p>
+        <p>We are also pretty sure that:</p>
+        <ul>
+          <li>GPT-4o is around 200B parameters. Source: <a href="https://arxiv.org/pdf/2412.19260"> Abacha et al, page 6</a>.</li>
+          <li>ChatGPT runs on NVIDIA servers, most probably servers containing 8 NVIDIA H100 GPUs. Source: <a href="https://nvidianews.nvidia.com/news/nvidia-hopper-gpus-expand-reach-as-demand-for-ai-grows"> NVIDIA</a>.</li>
+          <li>Each server uses around 5600 Watts of power. Source: <a href="https://smicro.eu/nvidia-hgx-h100-640gb-935-24287-0001-000-1"> Supermicro</a>.</li>
+        </ul>
+        
+        <p>And we can make some educated guesses:</p>
+        <ul>
+          <li>A single server (powered by 8 NVIDIA H100) can run the 200B llm with a batch size of about 10. This means that the server can respond to 10 different ChatGPT queries in parallel.</li>
+        </ul>
+
+        <p>Batch size of 10 should be achievable on the hardware with fp8 inference.</p>
+        
+        <p>Using these facts, let's calculate the Watt-hours needed by an average query:</p>
         <pre><code>
-0.34 Wh = 5600W * 5 seconds / batch size
+$\text{average length} \div \text{tokens per second} = 300 \text{ tokens} \div 180 \frac{\text{tokens}}{\text{s}} = 1.66... \text{ s}$
+        </code></pre>
+        <p>Now let's calculate how much energy the server uses during a single second</p>
+        <pre><code>
+$\text{power} \times \text{one hour} \div \text{seconds in an hour} = 5600 \text{W} \times 1 \text{h} \div {(60 \times 60) \text{ s}} = 1.55... \frac{Wh}{\text{s}}$
+        </code></pre>
+        
+        <p>Putting everything together:</p>
+        <pre><code>
+$\text{second needed by average query} \times \text{energy used per second} \div \text{batch size}$
+$= 1.66... \text{ s} \times 1.55... \frac{Wh}{\text{s}} \div 10 \approx 0.2592 Wh$
         </code></pre>
 
-        <p>What can we expect from tech journalists? Should they be able to do this? I do think large outlets should employ at least some people capable of this analysis. Might be deliberate to drive clicks through hatred.</p>
+        <p>Which is somewhat lower than what Altman said, huh? Well, my numbers might have mistakes in them, but I would hazard to say that they are in about the correct ballpark. I'm probably a little short on the average query length and power usage, but the model might also have some swanky MoE tricks up it's sleeve to boost the batch size.</p>
+
+        <p>Anyway, now that I have hooked you with the divisive start, let's get into the real meat.</p>
+
+        <p>Now, I know a big chunk of modern journalism is just about driving hate into clicks and finally into ad revenue. Of course, I would love for this to not be the case, but that's not easily achievable. I know that I can rectify this for myself by reading more longer form content from curated feeds linking to great blogs or from substack, but I would not like to give up hope on easily accessible non-bullshit tech news.</p>
+
+        <p>I can of course find great technical blog posts on this subject <a href="https://towardsdatascience.com/lets-analyze-openais-claims-about-chatgpt-energy-use/">here</a>, <a href="https://engineeringprompts.substack.com/p/the-average-chatgpt-request-uses">here</a> and <a href="https://epoch.ai/gradient-updates/how-much-energy-does-chatgpt-use">here</a>. But an average person is unlikely to stumble upon these.</p>
+
+        <p>In the case of GenAI and LLMs that threaten the jobs in the creative writing industry, I understand how covering these topics fairly might be difficult for a journalist. Somewhat ironically, with the advent of LLMs, explaining things such as the calculations I did above, should become easier. That's all I really want: a little bit of thought and a few calculations by the authors or maybe a google search to see if someone else has done analysis on the subject.</p>
+
+        <p>I'm also not here to dismiss the problems with GenAI and LLMs: the energy usage of datacenters is already 2% of global electricity consumption and growing. There are also other numerous problems that have to do with labor rights and copyright, but this is unfortunately not the blog post for those.</p>
+        
+        <p>I'll end this with a few comment discussion starters:</p>
+        <p>What should we expect from tech journalists in mainstream media? Is someone just astroturfing these shitty anti-AI articles to the top of reddit? Does the average person just hate AI so much that the news has to read like this in order to not appear biased to the general population?</p>
       </div>
     </div>
   </div>
